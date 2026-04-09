@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://dev-praveen010.github.io/B2C_IDP_Fedaration_Docs",
+  "homepage": "https://dev-praveen010.github.io/B2C_IDP_Federation_Docs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
