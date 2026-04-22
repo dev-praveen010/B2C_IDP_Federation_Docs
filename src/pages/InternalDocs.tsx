@@ -285,6 +285,365 @@ export default function InternalDocs() {
         </Callout>
       </DocSection>
 
+      {/* ───────────── EXPOSE API & SCOPES ───────────── */}
+      <DocSection
+        id="int-expose-api"
+        title="Expose API & Access Token Scopes"
+        subtitle="Define custom scopes on the B2C App Registration so clients receive scoped access tokens"
+        badge="Internal Only"
+      >
+        <p className="text-gray-700 text-sm mb-4">
+          After registering the application in Azure AD B2C, you must expose an API and
+          define custom OAuth 2.0 scopes. These scopes are included in the access token
+          request and allow downstream APIs (e.g. the client backend) to verify the
+          token was issued for a specific purpose.
+        </p>
+
+        <Callout type="info" title="Why This Step Matters">
+          Without exposing an API and adding scopes, the access token returned by B2C
+          will contain only the default <code className="text-blue-700 bg-blue-50 px-1 rounded text-xs">openid profile email</code> claims.
+          Custom scopes let you gate access to specific API resources.
+        </Callout>
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-6 mb-4">
+          Step 1 — Set the Application ID URI
+        </h3>
+
+        <StepCard
+          steps={[
+            {
+              number: 1,
+              title: 'Open App Registration',
+              description:
+                'Azure AD B2C → App registrations → select the registered app (e.g. MyApp Frontend).',
+            },
+            {
+              number: 2,
+              title: 'Click "Expose an API"',
+              description:
+                'In the left sidebar under Manage, click "Expose an API".',
+            },
+            {
+              number: 3,
+              title: 'Set Application ID URI',
+              description:
+                'Click "Set" next to Application ID URI. Accept the default value (api://{client-id}) or use a custom URI, then click Save.',
+              note: 'Default: api://{client-id}\nCustom: https://{tenant}.onmicrosoft.com/{app-name}',
+            },
+          ]}
+        />
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-8 mb-4">
+          Step 2 — Add a Scope
+        </h3>
+
+        <StepCard
+          steps={[
+            {
+              number: 1,
+              title: 'Click "Add a scope"',
+              description: 'On the Expose an API page, click the "Add a scope" button.',
+            },
+            {
+              number: 2,
+              title: 'Fill in Scope Details',
+              description: 'Enter the following values in the Add a scope panel:',
+              note: 'Scope name: access_as_user\nWho can consent: Admins and users\nAdmin consent display name: Access the API as a user\nAdmin consent description: Allows the app to access the backend API on behalf of the signed-in user.\nState: Enabled',
+            },
+            {
+              number: 3,
+              title: 'Click "Add scope"',
+              description:
+                'The full scope URI will be generated automatically, e.g. api://{client-id}/access_as_user. Note this value — it is required in the authorize URL.',
+            },
+          ]}
+        />
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-8 mb-4">
+          Scope URI Format
+        </h3>
+
+        <InfoTable
+          headers={['Field', 'Example Value', 'Notes']}
+          rows={[
+            ['Application ID URI', 'api://a1b2c3d4-xxxx-xxxx-xxxx-xxxxxxxxxxxx', 'Auto-generated from Client ID'],
+            ['Scope name', 'access_as_user', 'Define per resource/permission needed'],
+            ['Full scope URI', 'api://{client-id}/access_as_user', 'Use this in authorize URL scope parameter'],
+            ['Consent type', 'Admins and users', 'Recommended for internal B2B/B2C flows'],
+          ]}
+          striped
+        />
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-8 mb-4">
+          Step 3 — Use the Scope in the Authorize URL
+        </h3>
+
+        <p className="text-gray-700 text-sm mb-3">
+          Add the full scope URI to the <code className="text-blue-700 bg-blue-50 px-1 rounded text-xs">scope</code> parameter
+          of the B2C authorize URL. The access token returned will contain this scope claim.
+        </p>
+
+        <CodeBlock
+          language="text"
+          filename="Authorize URL — with custom scope"
+          code={`https://{tenant}.b2clogin.com/{tenant}.onmicrosoft.com/oauth2/v2.0/authorize
+  ?p=B2C_1A_SIGNUP_SIGNIN
+  &client_id={client-id}
+  &response_type=code
+  &response_mode=query
+  &redirect_uri=https://app.client.com/callback
+  &scope=openid profile email api://{client-id}/access_as_user`}
+        />
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-8 mb-4">
+          Step 4 — Token Exchange with Scope
+        </h3>
+
+        <p className="text-gray-700 text-sm mb-3">
+          Include the same scope value in the token exchange request body so B2C
+          returns an access token scoped to your API.
+        </p>
+
+        <CodeBlock
+          language="python"
+          filename="backend/token_exchange.py"
+          showLineNumbers
+          code={`import httpx
+
+async def exchange_code_for_tokens(code: str) -> dict:
+    token_url = (
+        "https://{tenant}.b2clogin.com/{tenant}.onmicrosoft.com"
+        "/oauth2/v2.0/token?p=B2C_1A_SIGNUP_SIGNIN"
+    )
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "code": code,
+        "redirect_uri": REDIRECT_URI,
+        # Include the custom scope to receive a scoped access token
+        "scope": "openid profile email api://{client-id}/access_as_user",
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.post(token_url, data=payload)
+        response.raise_for_status()
+        return response.json()   # contains id_token + access_token`}
+        />
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-8 mb-4">
+          Verifying Scope in the Access Token
+        </h3>
+
+        <p className="text-gray-700 text-sm mb-3">
+          Decode the returned <code className="text-blue-700 bg-blue-50 px-1 rounded text-xs">access_token</code> (JWT) to
+          confirm the <code className="text-blue-700 bg-blue-50 px-1 rounded text-xs">scp</code> claim contains your scope.
+        </p>
+
+        <CodeBlock
+          language="json"
+          filename="Decoded access_token payload"
+          showLineNumbers
+          code={`{
+  "iss": "https://{tenant}.b2clogin.com/{tenant-id}/v2.0/",
+  "sub": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "aud": "{client-id}",
+  "scp": "access_as_user",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "idp": "auth0-clienta",
+  "exp": 1800000000,
+  "iat": 1700000000
+}`}
+        />
+
+        <Callout type="warning" title="Scope Must Match App Registration">
+          The scope URI in the authorize URL and token request must exactly match
+          the full scope URI shown on the "Expose an API" page in Azure AD B2C.
+          A mismatch results in an <code className="text-red-700 bg-red-100 px-1 rounded text-xs">invalid_scope</code> error.
+        </Callout>
+
+        <Callout type="tip" title="Multiple Scopes">
+          You can define multiple scopes (e.g. <code className="text-emerald-700 bg-emerald-50 px-1 rounded text-xs">read</code>,{' '}
+          <code className="text-emerald-700 bg-emerald-50 px-1 rounded text-xs">write</code>,{' '}
+          <code className="text-emerald-700 bg-emerald-50 px-1 rounded text-xs">admin</code>) on the same App Registration.
+          List them space-separated in the scope parameter to request multiple at once.
+        </Callout>
+      </DocSection>
+
+      {/* ───────────── API PERMISSIONS ───────────── */}
+      <DocSection
+        id="int-api-permissions"
+        title="API Permissions"
+        subtitle="Grant the B2C app registration permission to call your exposed API scopes"
+        badge="Internal Only"
+      >
+        <p className="text-gray-700 text-sm mb-4">
+          After exposing an API and defining scopes, you must also grant the app registration
+          explicit permission to use those scopes. This is done through the{' '}
+          <strong>API permissions</strong> blade of the same app registration. Without this step,
+          token requests that include your custom scope will be rejected.
+        </p>
+
+        <Callout type="info" title="Two-Part Setup">
+          Exposing an API (Step 2) defines the scope. Granting API permissions (this step)
+          tells Azure AD B2C that this specific client application is allowed to request that scope.
+          Both steps are required.
+        </Callout>
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-6 mb-4">
+          Step 1 — Open API Permissions
+        </h3>
+
+        <StepCard
+          steps={[
+            {
+              number: 1,
+              title: 'Go to App Registration',
+              description:
+                'Azure AD B2C → App registrations → select the same app (e.g. InsightsAI Frontend).',
+            },
+            {
+              number: 2,
+              title: 'Click "API permissions"',
+              description:
+                'In the left sidebar under Manage, click "API permissions". You will see Microsoft Graph permissions already listed by default.',
+            },
+            {
+              number: 3,
+              title: 'Click "Add a permission"',
+              description:
+                'Click the "+ Add a permission" button to open the Request API permissions panel.',
+            },
+          ]}
+        />
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-8 mb-4">
+          Step 2 — Select Your Exposed API
+        </h3>
+
+        <StepCard
+          steps={[
+            {
+              number: 1,
+              title: 'Switch to "My APIs" tab',
+              description:
+                'In the Request API permissions panel, click the "My APIs" tab. Your app registration (InsightsAI Frontend) will appear here because it exposes an API.',
+            },
+            {
+              number: 2,
+              title: 'Select the API',
+              description:
+                'Click on the app name (e.g. InsightsAI Frontend). The scopes you defined on the "Expose an API" page will be listed.',
+            },
+            {
+              number: 3,
+              title: 'Check the scope checkbox',
+              description:
+                'Tick the checkbox next to your scope (e.g. access_as_user) to select it.',
+              note: 'Scope: access_as_user\nFull URI: https://inextlabsb2ctest.onmicrosoft.com/insightsAI_API/access_as_user',
+            },
+            {
+              number: 4,
+              title: 'Click "Add permissions"',
+              description:
+                'Click the "Add permissions" button. The scope now appears in the API permissions list with status "Not granted for {tenant}".',
+            },
+          ]}
+        />
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-8 mb-4">
+          Step 3 — Grant Admin Consent
+        </h3>
+
+        <p className="text-gray-700 text-sm mb-4">
+          After adding the permission, it shows as <strong>Not granted</strong>. You must grant
+          admin consent so the permission becomes active for all users without requiring individual
+          user consent prompts.
+        </p>
+
+        <StepCard
+          steps={[
+            {
+              number: 1,
+              title: 'Click "Grant admin consent for {tenant}"',
+              description:
+                'At the top of the API permissions list, click the "Grant admin consent for inextlabsb2ctest" button.',
+            },
+            {
+              number: 2,
+              title: 'Confirm the dialog',
+              description:
+                'A confirmation dialog appears — click Yes. The status column will change from a red cross to a green tick.',
+            },
+            {
+              number: 3,
+              title: 'Verify status is "Granted"',
+              description:
+                'The permission row should now show a green checkmark and the text "Granted for inextlabsb2ctest".',
+            },
+          ]}
+        />
+
+        <h3 className="text-lg font-semibold text-gray-900 mt-8 mb-4">
+          API Permissions Summary
+        </h3>
+
+        <InfoTable
+          headers={['Permission', 'Type', 'Scope URI', 'Status']}
+          rows={[
+            ['openid', 'Delegated (Microsoft Graph)', 'openid', '✅ Granted'],
+            ['offline_access', 'Delegated (Microsoft Graph)', 'offline_access', '✅ Granted'],
+            ['access_as_user', 'Delegated (My APIs)', 'https://inextlabsb2ctest.onmicrosoft.com/insightsAI_API/access_as_user', '✅ Granted'],
+          ]}
+          striped
+        />
+
+        {/* Flow diagram: Add permission → Select scope → Grant consent → Token includes scp */}
+        <h3 className="text-lg font-semibold text-gray-900 mt-8 mb-4">Permission Flow</h3>
+        <div className="overflow-x-auto my-2">
+          <div className="flex items-center gap-2 min-w-max py-3">
+            <div className="px-4 py-3 bg-blue-100 border-2 border-blue-400 rounded-lg text-center">
+              <p className="text-xs font-semibold text-blue-700">App Registration</p>
+              <p className="text-xs text-blue-500 mt-1">InsightsAI Frontend</p>
+            </div>
+            <span className="text-gray-400 text-lg">→</span>
+            <div className="px-4 py-3 bg-violet-100 border-2 border-violet-400 rounded-lg text-center">
+              <p className="text-xs font-semibold text-violet-700">Add a permission</p>
+              <p className="text-xs text-violet-500 mt-1">My APIs → access_as_user</p>
+            </div>
+            <span className="text-gray-400 text-lg">→</span>
+            <div className="px-4 py-3 bg-amber-100 border-2 border-amber-400 rounded-lg text-center">
+              <p className="text-xs font-semibold text-amber-700">Grant Admin Consent</p>
+              <p className="text-xs text-amber-500 mt-1">Status → Granted ✅</p>
+            </div>
+            <span className="text-gray-400 text-lg">→</span>
+            <div className="px-4 py-3 bg-emerald-100 border-2 border-emerald-400 rounded-lg text-center">
+              <p className="text-xs font-semibold text-emerald-700">Token Request</p>
+              <p className="text-xs text-emerald-500 mt-1">scope=...access_as_user</p>
+            </div>
+            <span className="text-gray-400 text-lg">→</span>
+            <div className="px-4 py-3 bg-gray-800 border-2 border-gray-600 rounded-lg text-center">
+              <p className="text-xs font-semibold text-white">Access Token</p>
+              <p className="text-xs text-gray-300 mt-1">&quot;scp&quot;: &quot;access_as_user&quot;</p>
+            </div>
+          </div>
+        </div>
+
+        <Callout type="error" title="Common Mistake — Permission Added But Not Granted">
+          Adding the permission without clicking <strong>Grant admin consent</strong> leaves it
+          in a <em>Not granted</em> state. Token requests will return an{' '}
+          <code className="text-red-700 bg-red-100 px-1 rounded text-xs">access_denied</code> or{' '}
+          <code className="text-red-700 bg-red-100 px-1 rounded text-xs">insufficient_scope</code>{' '}
+          error even though the scope exists on the API.
+        </Callout>
+
+        <Callout type="warning" title="My APIs Tab — App Must Expose an API First">
+          The app will only appear under <strong>My APIs</strong> if you have already completed
+          the "Expose an API" step and set an Application ID URI. If you don't see it,
+          go back and complete that step first.
+        </Callout>
+      </DocSection>
+
       {/* ───────────── PLATFORM TYPES ───────────── */}
       <DocSection
         id="int-platform"

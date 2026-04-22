@@ -13,6 +13,8 @@ export const internalSections: NavGroup[] = [
     items: [
       { id: 'int-tenant', label: 'Create B2C Tenant' },
       { id: 'int-app-reg', label: 'App Registration' },
+      { id: 'int-expose-api', label: 'Expose API & Scopes' },
+      { id: 'int-api-permissions', label: 'API Permissions' },
       { id: 'int-platform', label: 'Platform Types' },
       { id: 'int-policy-keys', label: 'Policy Keys (IEF)' },
       { id: 'int-custom-policies', label: 'Custom Policies' },
